@@ -1,0 +1,41 @@
+[Unit]
+Description=labelclone – duplicate label printer service
+Documentation=https://github.com/yourorg/labelclone
+# Start after USB subsystem and udev rules have settled
+After=systemd-udev-settle.service local-fs.target
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=simple
+User=labelclone
+Group=labelclone
+
+# Working directory and executable
+WorkingDirectory=/opt/labelclone
+ExecStart=/opt/labelclone/venv/bin/python /opt/labelclone/labelclone.py \
+    --config /etc/labelclone/labelclone.conf
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# Output goes to the journal (view with: journalctl -u labelclone -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=labelclone
+
+# Hardening – minimal privileges needed
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/dev
+# Allow raw device access (printer + input devices)
+DeviceAllow=/dev/input rw
+DeviceAllow=char-usb_device rw
+# Allow udev symlinks
+DeviceAllow=/dev/labelclone-scanner rw
+DeviceAllow=/dev/labelclone-printer rw
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+# /etc/udev/rules.d/99-labelclone.rules
+#
+# Creates stable symlinks for the labelclone service:
+#   /dev/labelclone-scanner  →  /dev/input/event* for the QR scanner
+#   /dev/labelclone-printer  →  /dev/usb/lp*      for the label printer
+#
+# HOW TO FIND YOUR DEVICE ATTRIBUTES
+# -----------------------------------
+# 1. Plug in the device.
+# 2. Run:  udevadm info -a -n /dev/input/event<N>   (for scanner)
+#          udevadm info -a -n /dev/usb/lp<N>         (for printer)
+# 3. Locate ATTRS{idVendor} and ATTRS{idProduct} in the output.
+# 4. Replace the placeholder values below.
+#
+# SCANNER (USB HID keyboard / barcode reader)
+# -------------------------------------------
+# Replace 1234 / 5678 with your scanner's actual Vendor:Product IDs.
+SUBSYSTEM=="input", ATTRS{idVendor}=="1234", ATTRS{idProduct}=="5678", \
+    KERNEL=="event*", SYMLINK+="labelclone-scanner", \
+    GROUP="labelclone", MODE="0660"
+
+# PRINTER (USB line printer / raw ZPL printer)
+# --------------------------------------------
+# Replace abcd / ef01 with your printer's actual Vendor:Product IDs.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="abcd", ATTRS{idProduct}=="ef01", \
+    KERNEL=="lp*", SYMLINK+="labelclone-printer", \
+    GROUP="labelclone", MODE="0660"
+
+# Generic fallback rules (lower priority) – grant group access to ALL
+# keyboard input devices and USB LP devices so auto-detection works
+# without custom symlinks.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{bInterfaceClass}=="03", \
+    GROUP="labelclone", MODE="0660"
+SUBSYSTEM=="usb", KERNEL=="lp*", \
+    GROUP="labelclone", MODE="0660"
