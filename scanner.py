@@ -155,6 +155,19 @@ LAYOUTS: dict[str, dict[int, tuple[str, str]]] = {
 
 # Modifier key codes
 _SHIFT_KEYS = {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT}
+_ALTGR_KEYS = {ecodes.KEY_RIGHTALT}  # AltGr on DE keyboards
+
+# AltGr combinations for DE layout (AltGr + key → character)
+# These cover umlauts and ß when sent as AltGr sequences rather than
+# direct keycode mappings.
+_ALTGR_DE: dict[int, str] = {
+    ecodes.KEY_A: "ä",
+    ecodes.KEY_O: "ö",
+    ecodes.KEY_U: "ü",
+    ecodes.KEY_S: "ß",
+    ecodes.KEY_Q: "@",
+    ecodes.KEY_E: "€",
+}
 
 # ---------------------------------------------------------------------------
 # ScannerReader
@@ -199,6 +212,7 @@ class ScannerReader:
 
         buffer: list[str] = []
         shift_held = False
+        altgr_held = False
 
         try:
             for event in device.read_loop():
@@ -209,6 +223,11 @@ class ScannerReader:
                 # Track shift state
                 if key_event.scancode in _SHIFT_KEYS:
                     shift_held = (key_event.keystate != key_event.key_up)
+                    continue
+
+                # Track AltGr state
+                if key_event.scancode in _ALTGR_KEYS:
+                    altgr_held = (key_event.keystate != key_event.key_up)
                     continue
 
                 # Only act on key-down (keystate == 1) and key-repeat (2)
@@ -228,12 +247,22 @@ class ScannerReader:
                     buffer.pop()
                     continue
 
+                # AltGr combination (DE umlauts etc.)
+                if altgr_held and self._layout_name == "de":
+                    altgr_ch = _ALTGR_DE.get(code)
+                    if altgr_ch:
+                        log.debug("ALTGR code=%d → %r", code, altgr_ch)
+                        buffer.append(altgr_ch)
+                        continue
+
                 mapping = self._layout.get(code)
                 if mapping is None:
-                    log.debug("Unmapped key code %d – ignored", code)
+                    key_name = ecodes.KEY.get(code, f"KEY_{code}")
+                    log.debug("Unmapped key code %d (%s) – ignored", code, key_name)
                     continue
 
                 ch = mapping[1] if shift_held else mapping[0]
+                log.debug("KEY code=%d shift=%s → %r", code, shift_held, ch)
                 buffer.append(ch)
 
         finally:
