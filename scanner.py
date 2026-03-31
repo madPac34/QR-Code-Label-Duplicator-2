@@ -156,6 +156,15 @@ LAYOUTS: dict[str, dict[int, tuple[str, str]]] = {
 # Modifier key codes
 _SHIFT_KEYS = {ecodes.KEY_LEFTSHIFT, ecodes.KEY_RIGHTSHIFT}
 _ALTGR_KEYS = {ecodes.KEY_RIGHTALT}  # AltGr on DE keyboards
+_ALT_KEYS   = {ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT}
+
+# Numpad digit keycodes in order 0-9
+_NUMPAD_DIGITS: dict[int, int] = {
+    ecodes.KEY_KP0: 0, ecodes.KEY_KP1: 1, ecodes.KEY_KP2: 2,
+    ecodes.KEY_KP3: 3, ecodes.KEY_KP4: 4, ecodes.KEY_KP5: 5,
+    ecodes.KEY_KP6: 6, ecodes.KEY_KP7: 7, ecodes.KEY_KP8: 8,
+    ecodes.KEY_KP9: 9,
+}
 
 # AltGr combinations for DE layout (AltGr + key → character)
 # These cover umlauts and ß when sent as AltGr sequences rather than
@@ -213,29 +222,68 @@ class ScannerReader:
         buffer: list[str] = []
         shift_held = False
         altgr_held = False
+        alt_held   = False
+        alt_digits: list[int] = []   # accumulates numpad digits while Alt is down
 
         try:
             for event in device.read_loop():
                 if event.type != ecodes.EV_KEY:
                     continue
                 key_event = categorize(event)
+                code      = key_event.scancode
+                state     = key_event.keystate  # 0=up 1=down 2=repeat
 
-                # Track shift state
-                if key_event.scancode in _SHIFT_KEYS:
-                    shift_held = (key_event.keystate != key_event.key_up)
+                # ── Shift ────────────────────────────────────────────────────
+                if code in _SHIFT_KEYS:
+                    shift_held = (state != key_event.key_up)
                     continue
 
-                # Track AltGr state
-                if key_event.scancode in _ALTGR_KEYS:
-                    altgr_held = (key_event.keystate != key_event.key_up)
+                # ── AltGr ────────────────────────────────────────────────────
+                if code in _ALTGR_KEYS:
+                    altgr_held = (state != key_event.key_up)
                     continue
 
-                # Only act on key-down (keystate == 1) and key-repeat (2)
-                if key_event.keystate == key_event.key_up:
+                # ── Alt (left) – CP-1252 alt-code sequencing ─────────────────
+                if code == ecodes.KEY_LEFTALT:
+                    if state == key_event.key_down:
+                        alt_held   = True
+                        alt_digits = []
+                    elif state == key_event.key_up:
+                        alt_held = False
+                        if alt_digits:
+                            # Reconstruct the decimal number
+                            code_point = int("".join(str(d) for d in alt_digits))
+                            try:
+                                ch = bytes([code_point]).decode("cp1252")
+                                log.debug(
+                                    "CP-1252 alt-code %d → %r", code_point, ch
+                                )
+                                buffer.append(ch)
+                            except (ValueError, UnicodeDecodeError):
+                                log.warning(
+                                    "CP-1252 alt-code %d out of range – ignored",
+                                    code_point,
+                                )
+                        alt_digits = []
                     continue
 
-                code = key_event.scancode
+                # Only act on key-down and key-repeat from here on
+                if state == key_event.key_up:
+                    continue
 
+                # ── Numpad digit while Alt held → accumulate alt-code ─────────
+                if alt_held:
+                    digit = _NUMPAD_DIGITS.get(code)
+                    if digit is not None:
+                        alt_digits.append(digit)
+                        log.debug("Alt-code digit: %s (so far: %s)", digit, alt_digits)
+                    else:
+                        log.debug(
+                            "Non-numpad key %d while Alt held – ignored", code
+                        )
+                    continue
+
+                # ── Normal keys ───────────────────────────────────────────────
                 if code == ecodes.KEY_ENTER:
                     payload = "".join(buffer)
                     buffer.clear()
@@ -247,7 +295,7 @@ class ScannerReader:
                     buffer.pop()
                     continue
 
-                # AltGr combination (DE umlauts etc.)
+                # AltGr combination (DE umlauts via AltGr+key, fallback path)
                 if altgr_held and self._layout_name == "de":
                     altgr_ch = _ALTGR_DE.get(code)
                     if altgr_ch:

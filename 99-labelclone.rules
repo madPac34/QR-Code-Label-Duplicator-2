@@ -15,14 +15,14 @@
 # SCANNER (USB HID keyboard / barcode reader)
 # -------------------------------------------
 # Replace 1234 / 5678 with your scanner's actual Vendor:Product IDs.
-SUBSYSTEM=="input", ATTRS{idVendor}=="1234", ATTRS{idProduct}=="5678", \
+SUBSYSTEM=="input", ATTRS{name}=="NT USB Keyboard", \
     KERNEL=="event*", SYMLINK+="labelclone-scanner", \
     GROUP="labelclone", MODE="0660"
 
 # PRINTER (USB line printer / raw ZPL printer)
 # --------------------------------------------
 # Replace abcd / ef01 with your printer's actual Vendor:Product IDs.
-SUBSYSTEM=="usb", ATTRS{idVendor}=="abcd", ATTRS{idProduct}=="ef01", \
+SUBSYSTEM=="usb", ATTRS{manufacturer}=="TSC*", \
     KERNEL=="lp*", SYMLINK+="labelclone-printer", \
     GROUP="labelclone", MODE="0660"
 
